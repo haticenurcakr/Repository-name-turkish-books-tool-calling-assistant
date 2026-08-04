@@ -1,1 +1,74 @@
 
+{{- bos_token }}
+
+{%- set default_system_prompt =
+    "Sen bir Türk klasik kitapları mağaza asistanısın. "
+    "Yalnızca araçlardan ve veritabanından dönen gerçek bilgilere dayanarak cevap ver. "
+    "Veritabanında olmayan kitap, stok, fiyat veya sipariş bilgilerini uydurma."
+-%}
+
+{%- if messages and messages[0]['role'] == 'system' %}
+    {%- set system_prompt = messages[0]['content'] %}
+    {%- set loop_messages = messages[1:] %}
+{%- else %}
+    {%- set system_prompt = default_system_prompt %}
+    {%- set loop_messages = messages %}
+{%- endif %}
+
+{{- '<|im_start|>system\n' }}
+{{- system_prompt | trim }}
+
+{%- if tools %}
+{{- '\n\nKullanılabilir araçlar:\n' }}
+{{- tools | tojson }}
+{{- '\n\nBir araç kullanman gerektiğinde yalnızca <tool_call> etiketi içerisinde geçerli JSON üret.' }}
+{%- endif %}
+
+{{- '<|im_end|>\n' }}
+
+{%- for message in loop_messages %}
+
+    {%- if message['role'] == 'user' %}
+
+{{- '<|im_start|>user\n' }}
+{{- message['content'] | trim }}
+{{- '<|im_end|>\n' }}
+
+    {%- elif message['role'] == 'assistant' %}
+
+{{- '<|im_start|>assistant\n' }}
+
+        {%- if message.get('tool_calls') %}
+            {%- for tool_call in message['tool_calls'] %}
+{{- '<tool_call>\n' }}
+{{- {
+    "name": tool_call['function']['name'],
+    "arguments": tool_call['function']['arguments']
+} | tojson }}
+{{- '\n</tool_call>' }}
+            {%- endfor %}
+        {%- elif message.get('content') %}
+{{- message['content'] | trim }}
+        {%- endif %}
+
+{{- '<|im_end|>\n' }}
+
+    {%- elif message['role'] == 'tool' %}
+
+{{- '<|im_start|>tool\n' }}
+{{- '<tool_response>\n' }}
+{{- message['content'] | trim }}
+{{- '\n</tool_response>' }}
+{{- '<|im_end|>\n' }}
+
+    {%- else %}
+
+{{- raise_exception("Desteklenmeyen mesaj rolü: " + message['role']) }}
+
+    {%- endif %}
+
+{%- endfor %}
+
+{%- if add_generation_prompt %}
+{{- '<|im_start|>assistant\n' }}
+{%- endif %}
